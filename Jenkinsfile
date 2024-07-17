@@ -28,11 +28,11 @@ pipeline {
         stage('Deploy') {
             steps {
                 script {
-                    // Copy JAR file to EC2 instance
-                    sh "scp -o StrictHostKeyChecking=no ${JAR_FILE} ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/jenkins-demo.jar"
+                    // Copy JAR file to EC2 instance using SSH credentials from Jenkins
+                    sh "scp -i /dev/null -o StrictHostKeyChecking=no ${JAR_FILE} ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/jenkins-demo.jar"
 
                     // SSH into EC2 instance and start application
-                    sshagent(['ec2-ssh-key']) {
+                    sshagent(credentials: ['your-ssh-credentials-id']) {
                         sh """
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'bash -s' <<-'ENDSSH'
                         pkill -f jenkins-demo.jar || true
