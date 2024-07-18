@@ -2,25 +2,61 @@ pipeline {
     agent any
 
     environment {
-        EC2_HOST = 'ec2-18-181-182-3.ap-northeast-1.compute.amazonaws.com'
-        EC2_USER = 'ec2-user'
-        JAR_FILE = 'target/jenkins-demo.jar'
+        // Define any environment variables here
+        // Example: PROJECT_NAME = 'my-project'
+    }
+
+    options {
+        // Options to control the pipeline execution
+        timeout(time: 1, unit: 'HOURS')  // Timeout after 1 hour
+        timestamps()  // Add timestamps to the console output
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout') {
             steps {
-                git 'https://github.com/EnggAdda/JenkinsDemoAWS.git'
+                checkout scm
             }
         }
 
         stage('Build') {
             steps {
                 script {
-                    // Ensure mvnw has executable permissions
-                    sh 'chmod +x mvnw'
-                    // Run Maven build
-                    sh './mvnw clean package'
+                    if (fileExists('build.gradle')) {
+                        sh './gradlew build'
+                    } else if (fileExists('pom.xml')) {
+                        sh 'mvn clean install'
+                    } else {
+                        error 'No build file found!'
+                    }
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                script {
+                    if (fileExists('build.gradle')) {
+                        sh './gradlew test'
+                    } else if (fileExists('pom.xml')) {
+                        sh 'mvn test'
+                    } else {
+                        error 'No build file found!'
+                    }
+                }
+            }
+        }
+
+        stage('Quality Checks') {
+            steps {
+                script {
+                    if (fileExists('build.gradle')) {
+                        sh './gradlew check'
+                    } else if (fileExists('pom.xml')) {
+                        sh 'mvn sonar:sonar'
+                    } else {
+                        error 'No build file found!'
+                    }
                 }
             }
         }
@@ -28,17 +64,28 @@ pipeline {
         stage('Deploy') {
             steps {
                 script {
-                    // Copy JAR file to EC2 instance using SSH credentials from Jenkins
-                    sh "scp -i /dev/null -o StrictHostKeyChecking=no ${JAR_FILE} ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/jenkins-demo.jar"
+                    if (env.BRANCH_NAME == 'master') {
+                        // Deploy to production
+                        sh './deploy.sh production'
+                    } else {
+                        // Deploy to staging
+                        sh './deploy.sh staging'
+                    }
+                }
+            }
+        }
 
-                    // SSH into EC2 instance and start application
-                    sshagent(credentials: ['your-ssh-credentials-id']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'bash -s' <<-'ENDSSH'
-                        pkill -f jenkins-demo.jar || true
-                        nohup java -jar /home/${EC2_USER}/jenkins-demo.jar > /dev/null 2>&1 &
-                        ENDSSH
-                        """
+        stage('Notify') {
+            steps {
+                script {
+                    if (currentBuild.result == 'SUCCESS') {
+                        mail to: 'team@example.com',
+                             subject: "Build ${currentBuild.fullDisplayName} completed successfully",
+                             body: "Build ${currentBuild.fullDisplayName} completed successfully."
+                    } else {
+                        mail to: 'team@example.com',
+                             subject: "Build ${currentBuild.fullDisplayName} failed",
+                             body: "Build ${currentBuild.fullDisplayName} failed. Please check Jenkins for details."
                     }
                 }
             }
@@ -47,7 +94,16 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
+            junit '**/target/surefire-reports/*.xml'
+        }
+
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+
+        failure {
+            echo 'Pipeline failed. Check logs for details.'
         }
     }
 }
