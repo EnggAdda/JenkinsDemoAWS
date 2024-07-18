@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // Define any environment variables here
-        // Example: PROJECT_NAME = 'my-project'
+         PROJECT_NAME = 'my-project'
     }
 
     options {
